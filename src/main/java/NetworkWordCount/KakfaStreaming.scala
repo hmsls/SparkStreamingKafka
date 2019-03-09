@@ -18,42 +18,54 @@ import org.apache.spark.streaming.{Seconds, StreamingContext}
   * 偏移量仅仅被ssc保存在checkpoint中，消除了zk和ssc偏移量不一致的问题。缺点是无法使用基于zookeeper的kafka监控工具.
   */
 object KakfaStreaming {
-  def main(args: Array[String]): Unit = {
-    //1、创建sparkConf
+  //配置kafka相关参数
+  val kafkaParams=Map("metadata.broker.list"->"192.168.174.160:9092","group.id"->"Kafka_Direct")
+  //定义topic
+  val topics=Set("kafka-stream2")
+  //检查点目录
+  val checkpointDirectory="kafkaStream"
+
+  //如果没从checkpoint中创建ssc，那就从开始创建ssc
+  def functionToCreateContext():StreamingContext={
+    //创建sparkConf
     val sparkConf: SparkConf = new SparkConf().setAppName("SparkStreamingKafka_Direct").setMaster("local[2]")
-    //2、创建sparkContext
+    //创建sparkContext
     val sc = new SparkContext(sparkConf)
     import org.apache.log4j.{Logger,Level}
     Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
     Logger.getLogger("org.apache.spark.sql").setLevel(Level.WARN)
     Logger.getLogger("org.apache.spark.stream").setLevel(Level.WARN)
     sc.setLogLevel("WARN")
-    //3、创建StreamingContext
+    //创建StreamingContext
     val ssc = new StreamingContext(sc,Seconds(5))
     ssc.sparkContext.setLogLevel("WARN")
-    //4、配置kafka相关参数
-    val kafkaParams=Map("metadata.broker.list"->"192.168.174.160:9092","group.id"->"Kafka_Direct")
-    //5、定义topic
-    val topics=Set("kafka-stream2")
-    //6、通过 KafkaUtils.createDirectStream接受kafka数据，这里采用是kafka低级api偏移量不受zk管理
-    val dstream: InputDStream[(String, String)] = KafkaUtils.createDirectStream[String,String,StringDecoder,StringDecoder](ssc,kafkaParams,topics)
-    //7、获取kafka中topic中的数据
+    ssc.checkpoint(checkpointDirectory)
+    ssc
+  }
+
+  def main(args: Array[String]): Unit = {
+    val context = StreamingContext.getOrCreate(checkpointDirectory,functionToCreateContext _)
+    //通过 KafkaUtils.createDirectStream接受kafka数据，这里采用是kafka低级api偏移量不受zk管理
+    val dstream: InputDStream[(String, String)] = KafkaUtils.createDirectStream[String,String,StringDecoder,StringDecoder](context,kafkaParams,topics)
+    //获取kafka中topic中的数据
     val topicData: DStream[String] = dstream.map(_._2)
-    //8、切分每一行,每个单词计为1
+    //切分每一行,每个单词计为1
     val wordAndOne: DStream[(String, Int)] = topicData.flatMap(_.split(" ")).map((_,1))
-    //9、相同单词出现的次数累加
+    //相同单词出现的次数累加
     val result: DStream[(String, Int)] = wordAndOne.reduceByKey(_+_)
-    //9-1、用当前batch的数据去更新已有的数据
+    //用当前batch的数据去更新已有的数据
     wordAndOne.updateStateByKey[Int](updateFunc)
-    //10、打印输出
+    //打印输出
     result.print()
     //开启计算
-    ssc.start()
-    ssc.awaitTermination()
+    context.start()
+    context.awaitTermination()
   }
+  //更新状态方法
   val updateFunc = (currentValue:Seq[Int],preValue:Option[Int])=>{
     val curr = currentValue.sum
     val prev = preValue.getOrElse(0)
     Some(curr+prev)
   }
+
 }
