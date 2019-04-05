@@ -44,6 +44,37 @@
             <version>1.6.3</version>
         </dependency>
 
+        <!--第三方库，用来做选项解析-->
+        <dependency>
+            <groupId>net.sf.jopt-simple</groupId>
+            <artifactId>jopt-simple</artifactId>
+            <version>5.0.3</version>
+        </dependency>
+        <!--第三方库，用来处理时间日期的转换的工具库-->
+        <dependency>
+            <groupId>joda-time</groupId>
+            <artifactId>joda-time</artifactId>
+            <version>2.9.9</version>
+        </dependency>
     </dependencies>
+    <build>
+        <plugins>
+            <!--超级jar包，可以使用idea的build artifact工具，打包时将依赖的jar包全都打到一起-->
+            <!--用来创建超级JAR包的maven shade插件-->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>2.3</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 
 </project>
